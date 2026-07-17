@@ -1,0 +1,18 @@
+{
+  "name": "Creed 57+ Mobile App",
+  "short_name": "Creed 57+",
+  "description": "Hosted mobile-first Creed workout app with bigger text, bottom navigation, and recovery-friendly tracking.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b0b0d",
+  "theme_color": "#0b0b0d",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
