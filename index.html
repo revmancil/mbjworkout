@@ -37,6 +37,7 @@
     .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    canvas{display:block;width:100%;max-width:100%;height:220px;border:1px solid var(--line);border-radius:16px;background:#0f0f14}
     .chip,.field,.btn,.tab,.day-btn,.seg{border:1px solid var(--line);background:var(--card2);color:var(--text);border-radius:14px}
     .field,select.field,input.field{width:100%;min-height:56px;padding:14px 16px;font-size:17px}
     .btn{min-height:56px;padding:14px 16px;font-weight:800;cursor:pointer;font-size:16px}
@@ -83,7 +84,8 @@
     .timer-card{width:100%;max-width:380px;padding:20px;border-radius:22px;background:linear-gradient(180deg,var(--card),#121218);border:1px solid var(--line)}
     .timer-display{font-family:var(--display);font-size:82px;text-align:center;color:var(--gold);line-height:1;margin:10px 0 14px}
     .linkish{color:#d7e9ff;text-decoration:underline;text-underline-offset:2px}
-    @media (max-width:430px){.weeks{grid-template-columns:repeat(4,1fr)}.days{grid-template-columns:repeat(2,1fr)}.grid3{grid-template-columns:1fr}.set-row{grid-template-columns:48px 1fr 1fr}.set-row input:last-child{grid-column:2 / span 2}}
+    @media (max-width:520px){.grid3{grid-template-columns:1fr}.set-row{grid-template-columns:48px 1fr 1fr}.set-row input:last-child{grid-column:2 / span 2}}
+    @media (max-width:430px){.weeks{grid-template-columns:repeat(4,1fr)}.days{grid-template-columns:repeat(2,1fr)}}
   </style>
 </head>
 <body>
@@ -346,10 +348,26 @@
     function historyFor(name){ const ref=exerciseRef(name); if(!ref) return []; return Array.from({length:8},(_,i)=>{ const week=i+1; let top=0,totalRpe=0,c=0; for(let s=1;s<=ref.ex.sets;s++){ const log=getLog(week,ref.day,ref.exIndex,s); const wt=Number(log.weight||0),rpe=Number(log.rpe||0); top=Math.max(top,wt); if(rpe){ totalRpe+=rpe; c++; } } return {week,top,avgRpe:c?totalRpe/c:0}; }); }
     function roundToStep(num, step){ return Math.round(num/step)*step; }
     function suggestion(ex){ const hist=historyFor(ex.n); const current=hist.find(h=>h.week===state.activeWeek); const prior=hist.find(h=>h.week===Math.max(1,state.activeWeek-1)); const source=current&&current.top?current:prior; if(!source||!source.top) return 'Start conservative. Add only small increases when reps stay crisp and pain-free.'; const step=state.unit==='lb'?(ex.incLb||2.5):(ex.incKg||1); let next=source.top; if(source.avgRpe && source.avgRpe<=7.5) next+=step; else if(source.avgRpe && source.avgRpe>=9) next-=Math.max(step/2,state.unit==='lb'?2.5:1); next=roundToStep(next,state.unit==='lb'?2.5:.5); return `If form stayed clean around RPE ${source.avgRpe?source.avgRpe.toFixed(1):'7–8'}, next week try about ${next} ${state.unit}.`; }
-    function drawLineChart(canvas, points, emptyMsg){ const ctx=canvas.getContext('2d'); const w=canvas.width, h=canvas.height; ctx.clearRect(0,0,w,h); ctx.fillStyle='#0f0f14'; ctx.fillRect(0,0,w,h); const pad={l:40,r:12,t:16,b:26}; const plotW=w-pad.l-pad.r, plotH=h-pad.t-pad.b; const max=Math.max(...points.map(p=>Number(p.value)||0),0); const topMax=max?max*1.15:100; ctx.strokeStyle='#2a2a35'; for(let i=0;i<4;i++){ const y=pad.t+(plotH/3)*i; ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(w-pad.r,y); ctx.stroke(); }
-      ctx.fillStyle='#8f8f9b'; ctx.font='11px system-ui'; points.forEach((p,i)=>{ const x=pad.l+(plotW/Math.max(points.length-1,1))*i; ctx.fillText(p.label,x-10,h-8); });
-      if(!points.some(p=>Number(p.value)>0)){ ctx.fillStyle='#b4b4bf'; ctx.font='14px system-ui'; ctx.fillText(emptyMsg, 70, 135); return; }
-      ctx.beginPath(); points.forEach((p,i)=>{ const x=pad.l+(plotW/Math.max(points.length-1,1))*i; const y=pad.t+plotH-((Number(p.value)||0)/topMax)*plotH; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); }); ctx.strokeStyle='#ffd23f'; ctx.lineWidth=3; ctx.stroke();
+    function drawLineChart(canvas, points, emptyMsg){
+      const ratio = Math.max(window.devicePixelRatio || 1, 1);
+      const cssWidth = Math.max(Math.floor(canvas.getBoundingClientRect().width || 320), 280);
+      const cssHeight = 220;
+      canvas.width = Math.floor(cssWidth * ratio);
+      canvas.height = Math.floor(cssHeight * ratio);
+      const ctx=canvas.getContext('2d');
+      ctx.setTransform(ratio,0,0,ratio,0,0);
+      const w=cssWidth, h=cssHeight;
+      ctx.clearRect(0,0,w,h); ctx.fillStyle='#0f0f14'; ctx.fillRect(0,0,w,h);
+      const pad={l:40,r:12,t:16,b:26}; const plotW=w-pad.l-pad.r, plotH=h-pad.t-pad.b;
+      const max=Math.max(...points.map(p=>Number(p.value)||0),0); const topMax=max?max*1.15:100;
+      ctx.strokeStyle='#2a2a35'; ctx.lineWidth=1;
+      for(let i=0;i<4;i++){ const y=pad.t+(plotH/3)*i; ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(w-pad.r,y); ctx.stroke(); }
+      ctx.fillStyle='#8f8f9b'; ctx.font='11px system-ui';
+      points.forEach((p,i)=>{ const x=pad.l+(plotW/Math.max(points.length-1,1))*i; ctx.fillText(p.label,x-10,h-8); });
+      if(!points.some(p=>Number(p.value)>0)){ ctx.fillStyle='#b4b4bf'; ctx.font='14px system-ui'; ctx.fillText(emptyMsg, 24, 135); return; }
+      ctx.beginPath();
+      points.forEach((p,i)=>{ const x=pad.l+(plotW/Math.max(points.length-1,1))*i; const y=pad.t+plotH-((Number(p.value)||0)/topMax)*plotH; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
+      ctx.strokeStyle='#ffd23f'; ctx.lineWidth=3; ctx.stroke();
       points.forEach((p,i)=>{ const x=pad.l+(plotW/Math.max(points.length-1,1))*i; const y=pad.t+plotH-((Number(p.value)||0)/topMax)*plotH; ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fillStyle=Number(p.value)?'#e11d2e':'#4b4b56'; ctx.fill(); });
     }
 
@@ -405,6 +423,7 @@
     function beep(){ const ctx=new (window.AudioContext||window.webkitAudioContext)(); const osc=ctx.createOscillator(), gain=ctx.createGain(); osc.type='sine'; osc.frequency.value=880; gain.gain.value=.12; osc.connect(gain); gain.connect(ctx.destination); osc.start(); setTimeout(()=>osc.frequency.value=660,170); setTimeout(()=>{osc.stop();ctx.close();},420); }
     $('#timerFab').addEventListener('click',()=>$('#timerModal').classList.add('open')); $('#timerClose').addEventListener('click',()=>$('#timerModal').classList.remove('open')); $('#timerReset').addEventListener('click',()=>{ clearInterval(timerId); timerId=null; timerLeft=timerSecs; $('#timerStart').textContent='Start'; drawTimer(); }); $('#timerStart').addEventListener('click',()=>{ if(timerId){ clearInterval(timerId); timerId=null; $('#timerStart').textContent='Start'; return; } $('#timerStart').textContent='Pause'; timerId=setInterval(()=>{ timerLeft--; drawTimer(); if(timerLeft<=0){ clearInterval(timerId); timerId=null; $('#timerStart').textContent='Start'; timerLeft=timerSecs; beep(); drawTimer(); } },1000); }); $$('.preset').forEach(btn=>btn.addEventListener('click',()=>{ timerSecs=Number(btn.dataset.sec); timerLeft=timerSecs; drawTimer(); }));
 
+    window.addEventListener('resize',()=>{ if(state.screen==='body'){ renderBodyweight(); } });
     drawTimer(); renderAll();
   </script>
 </body>
