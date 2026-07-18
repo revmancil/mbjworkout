@@ -207,6 +207,17 @@
     <section id="screen-more" class="screen">
       <div class="stack">
         <div class="card">
+          <div class="kicker">Lift progress</div>
+          <div class="row"><select id="chartExerciseSelect" class="field" style="flex:1"></select></div>
+          <div class="stats" style="margin-top:12px">
+            <div class="stat"><span>Current week</span><b id="chartCurrent">—</b></div>
+            <div class="stat"><span>Best</span><b id="chartBest">—</b></div>
+            <div class="stat"><span>Trend</span><b id="chartTrend">—</b></div>
+          </div>
+          <canvas id="liftChart" width="460" height="220" style="margin-top:12px"></canvas>
+        </div>
+
+        <div class="card">
           <div class="kicker">Creed core</div>
           <div class="seg-wrap">
             <button id="coreOriginalBtn" class="seg">Original</button>
@@ -318,6 +329,9 @@
       {t:'Hydration',d:'Start sessions hydrated and keep water nearby.'},{t:'Sleep',d:'Aim for 7–9 hours whenever possible.'},{t:'Recovery pacing',d:'If joints feel worse, cut a set or trim Day 5.'},{t:'Effort control',d:'Most work should live around RPE 6–8.'}
     ];
 
+    const CHART_MOVES = PROGRAM.filter(d=>d.type==='lift').flatMap(d=>d.exercises.map(ex=>ex.n));
+    const UNIQUE_MOVES = [...new Set(CHART_MOVES)];
+
     const STORAGE_KEY = 'creed57.mobile.v1';
     const defaultState = {activeWeek:1,activeDay:1,unit:'lb',chartExercise:'Deadlift',coreMode:'scaled',screen:'workout',done:{},logs:{},special:{},swaps:{},meals:[],bodyweights:[]};
     const state = Object.assign({}, defaultState, JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'));
@@ -325,6 +339,7 @@
     state.bodyweights = Array.isArray(state.bodyweights) ? state.bodyweights : [];
     const $ = s => document.querySelector(s); const $$ = s => Array.from(document.querySelectorAll(s));
     const today = new Date().toISOString().slice(0,10);
+    const openHistory = new Set();
 
     function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
     function dayData(day){ return PROGRAM.find(d=>d.day===day); }
@@ -346,10 +361,11 @@
     function dayComplete(week,day){ const d=dayData(day); if(d.type==='lift') return d.exercises.every((_,i)=>isDone(week,day,i)); return !!getSpecial(week,day).done; }
     function weekPct(week){ let n=0; for(let d=1;d<=7;d++) if(dayComplete(week,d)) n++; return Math.round(n/7*100); }
     function getCoreRoutine(){ return state.coreMode==='original' ? ORIGINAL_ABS : SCALED_ABS; }
-    function exerciseRef(name){ for(const d of PROGRAM){ if(d.type!=='lift') continue; const idx=d.exercises.findIndex(ex=>ex.n===name); if(idx>-1) return {day:d.day,exIndex:idx,ex:d.exercises[idx]}; } return null; }
-    function historyFor(name){ const ref=exerciseRef(name); if(!ref) return []; return Array.from({length:8},(_,i)=>{ const week=i+1; let top=0,totalRpe=0,c=0; for(let s=1;s<=ref.ex.sets;s++){ const log=getLog(week,ref.day,ref.exIndex,s); const wt=Number(log.weight||0),rpe=Number(log.rpe||0); top=Math.max(top,wt); if(rpe){ totalRpe+=rpe; c++; } } return {week,top,avgRpe:c?totalRpe/c:0}; }); }
+    function exerciseSlots(name){ const refs=[]; for(const d of PROGRAM){ if(d.type!=='lift') continue; d.exercises.forEach((ex,idx)=>{ if(ex.n===name) refs.push({day:d.day,exIndex:idx,sets:ex.sets}); }); } return refs; }
+    function historyForSlot(day,exIndex,sets){ return Array.from({length:8},(_,i)=>{ const week=i+1; let top=0,totalRpe=0,c=0; for(let s=1;s<=sets;s++){ const log=getLog(week,day,exIndex,s); const wt=Number(log.weight||0),rpe=Number(log.rpe||0); top=Math.max(top,wt); if(rpe){ totalRpe+=rpe; c++; } } return {week,top,avgRpe:c?totalRpe/c:0}; }); }
+    function historyForName(name){ const refs=exerciseSlots(name); return Array.from({length:8},(_,i)=>{ const week=i+1; let top=0,totalRpe=0,c=0; refs.forEach(ref=>{ for(let s=1;s<=ref.sets;s++){ const log=getLog(week,ref.day,ref.exIndex,s); const wt=Number(log.weight||0),rpe=Number(log.rpe||0); top=Math.max(top,wt); if(rpe){ totalRpe+=rpe; c++; } } }); return {week,top,avgRpe:c?totalRpe/c:0}; }); }
     function roundToStep(num, step){ return Math.round(num/step)*step; }
-    function suggestion(ex){ const hist=historyFor(ex.n); const current=hist.find(h=>h.week===state.activeWeek); const prior=hist.find(h=>h.week===Math.max(1,state.activeWeek-1)); const source=current&&current.top?current:prior; if(!source||!source.top) return 'Start conservative. Add only small increases when reps stay crisp and pain-free.'; const step=state.unit==='lb'?(ex.incLb||2.5):(ex.incKg||1); let next=source.top; if(source.avgRpe && source.avgRpe<=7.5) next+=step; else if(source.avgRpe && source.avgRpe>=9) next-=Math.max(step/2,state.unit==='lb'?2.5:1); next=roundToStep(next,state.unit==='lb'?2.5:.5); return `If form stayed clean around RPE ${source.avgRpe?source.avgRpe.toFixed(1):'7–8'}, next week try about ${next} ${state.unit}.`; }
+    function suggestion(ex,hist){ const current=hist.find(h=>h.week===state.activeWeek); const prior=hist.find(h=>h.week===Math.max(1,state.activeWeek-1)); const source=current&&current.top?current:prior; if(!source||!source.top) return 'Start conservative. Add only small increases when reps stay crisp and pain-free.'; const step=state.unit==='lb'?(ex.incLb||2.5):(ex.incKg||1); let next=source.top; if(source.avgRpe && source.avgRpe<=7.5) next+=step; else if(source.avgRpe && source.avgRpe>=9) next-=Math.max(step/2,state.unit==='lb'?2.5:1); next=roundToStep(next,state.unit==='lb'?2.5:.5); return `If form stayed clean around RPE ${source.avgRpe?source.avgRpe.toFixed(1):'7–8'}, next week try about ${next} ${state.unit}.`; }
     function drawLineChart(canvas, points, emptyMsg){
       const ratio = Math.max(window.devicePixelRatio || 1, 1);
       const cssWidth = Math.max(Math.floor(canvas.getBoundingClientRect().width || 320), 280);
@@ -376,15 +392,21 @@
     function renderWeeks(){ const weekGrid=$('#weekGrid'); weekGrid.innerHTML=''; for(let w=1;w<=8;w++){ const b=document.createElement('button'); b.className=`week-btn ${state.activeWeek===w?'active':''}`; b.textContent=`W${w}`; b.addEventListener('click',()=>{ state.activeWeek=w; save(); renderWorkout(); renderWeeks(); }); weekGrid.appendChild(b); } $('#weekPct').textContent=`${weekPct(state.activeWeek)}%`; }
     function renderDays(){ const dayGrid=$('#dayGrid'); dayGrid.innerHTML=''; PROGRAM.forEach(d=>{ const b=document.createElement('button'); b.className=`day-btn ${state.activeDay===d.day?'active':''}`; b.innerHTML=`<strong>D${d.day}</strong>`; b.addEventListener('click',()=>{ state.activeDay=d.day; save(); renderWorkout(); renderDays(); }); dayGrid.appendChild(b); }); }
     function renderWorkout(){ $('#weekSelect').value=String(state.activeWeek); $('#unitSelect').value=state.unit; renderDays(); const d=dayData(state.activeDay); $('#dayTitle').textContent=d.title; $('#dayMeta').textContent=d.type==='lift' ? `${d.exercises.length} exercises · ${d.finisher||'recovery-first session'}` : d.type==='recovery' ? 'Low stress restoration day' : 'Light movement and recovery'; $('#warmup').textContent=d.warmup; $('#focus').textContent=d.focus; const list=$('#exerciseList'); list.innerHTML=''; if(d.type==='lift') renderLiftDay(d,list); else if(d.type==='recovery') renderRecoveryDay(d,list); else renderRestDay(d,list); const total=d.type==='lift'?d.exercises.length:1; const done=d.type==='lift'?d.exercises.filter((_,i)=>isDone(state.activeWeek,state.activeDay,i)).length:(dayComplete(state.activeWeek,state.activeDay)?1:0); const pct=Math.round(done/total*100); $('#dayProgress').style.width=`${pct}%`; $('#dayPct').textContent=`${pct}% complete`; }
-    function renderLiftDay(d,list){ d.exercises.forEach((ex,i)=>{ const currentName=getSwap(state.activeWeek,state.activeDay,i,ex.n); const done=isDone(state.activeWeek,state.activeDay,i); const card=document.createElement('div'); card.className=`exercise ${done?'done':''}`; const alts=[ex.n].concat(REPLACEMENTS[ex.n]||[]); card.innerHTML=`<div class="exercise-top"><div><h4>${currentName}</h4><small>${ex.tip}</small></div><div class="sr">${ex.sets}×${ex.reps}<span>${done?'done':'work'}</span></div></div><div class="row"><a class="linkish" href="https://www.youtube.com/results?search_query=${encodeURIComponent(currentName+' proper form for beginners')}" target="_blank" rel="noopener">Open form video</a><button class="btn ${done?'alt':'primary'} done-btn" style="flex:1">${done?'Completed':'Mark complete'}</button></div><select class="field swap">${alts.map(opt=>`<option ${opt===currentName?'selected':''}>${opt}</option>`).join('')}</select><div class="hint">${suggestion(ex)}</div><div class="tip">Age-appropriate intensity: stop the set when technique slows down or joint discomfort builds.</div><div class="set-grid"></div>`;
+    function renderLiftDay(d,list){ d.exercises.forEach((ex,i)=>{ const currentName=getSwap(state.activeWeek,state.activeDay,i,ex.n); const done=isDone(state.activeWeek,state.activeDay,i); const card=document.createElement('div'); card.className=`exercise ${done?'done':''}`; const alts=[ex.n].concat(REPLACEMENTS[ex.n]||[]);
+        const histKey=`${state.activeDay}_${i}`; const histOpen=openHistory.has(histKey); const hist=historyForSlot(state.activeDay,i,ex.sets);
+        const best=hist.reduce((acc,cur)=>cur.top>acc.top?cur:acc,{week:'—',top:0}); const first=hist.find(h=>h.top>0), last=[...hist].reverse().find(h=>h.top>0);
+        const bestText=best.top?`W${best.week} · ${best.top} ${state.unit}`:'—'; const trendText=(first&&last&&first.week!==last.week)?`${last.top-first.top>0?'+':''}${last.top-first.top} ${state.unit}`:'No trend yet';
+        card.innerHTML=`<div class="exercise-top"><div><h4>${currentName}</h4><small>${ex.tip}</small></div><div class="sr">${ex.sets}×${ex.reps}<span>${done?'done':'work'}</span></div></div><div class="row"><a class="linkish" href="https://www.youtube.com/results?search_query=${encodeURIComponent(currentName+' proper form for beginners')}" target="_blank" rel="noopener">Open form video</a><button class="btn ${done?'alt':'primary'} done-btn" style="flex:1">${done?'Completed':'Mark complete'}</button></div><select class="field swap">${alts.map(opt=>`<option ${opt===currentName?'selected':''}>${opt}</option>`).join('')}</select><div class="hint">${suggestion(ex,hist)}</div><div class="tip">Age-appropriate intensity: stop the set when technique slows down or joint discomfort builds.</div><div class="set-grid"></div><button class="btn alt hist-btn" style="min-height:40px;padding:8px 12px;margin-top:4px">${histOpen?'Hide history':'View history'}</button>${histOpen?`<div class="hist-panel" style="margin-top:10px"><canvas class="hist-canvas" width="460" height="220"></canvas><div class="row" style="justify-content:space-between;margin-top:8px;font-size:13px"><span class="muted">Best: <b>${bestText}</b></span><span class="muted">Trend: <b>${trendText}</b></span></div></div>`:''}`;
         card.querySelector('.done-btn').addEventListener('click',()=>toggleDone(state.activeWeek,state.activeDay,i));
         card.querySelector('.swap').addEventListener('change',e=>setSwap(state.activeWeek,state.activeDay,i,e.target.value));
+        card.querySelector('.hist-btn').addEventListener('click',()=>{ if(openHistory.has(histKey)) openHistory.delete(histKey); else openHistory.add(histKey); renderWorkout(); });
         const grid=card.querySelector('.set-grid');
         for(let s=1;s<=ex.sets;s++){
           const log=getLog(state.activeWeek,state.activeDay,i,s); const row=document.createElement('div'); row.className='set-row'; row.innerHTML=`<div class="set-id">${s}</div><input class="field" type="number" step="${state.unit==='lb'?'2.5':'0.5'}" value="${log.weight}" placeholder="Weight" /><input class="field" type="number" step="1" value="${log.reps}" placeholder="Reps" /><input class="field" type="number" step="0.5" value="${log.rpe}" placeholder="RPE" />`;
           const [wt,reps,rpe]=row.querySelectorAll('input'); wt.addEventListener('input',e=>setLog(state.activeWeek,state.activeDay,i,s,'weight',e.target.value)); reps.addEventListener('input',e=>setLog(state.activeWeek,state.activeDay,i,s,'reps',e.target.value)); rpe.addEventListener('input',e=>setLog(state.activeWeek,state.activeDay,i,s,'rpe',e.target.value)); wt.addEventListener('blur',()=>renderWorkout()); reps.addEventListener('blur',()=>renderWorkout()); rpe.addEventListener('blur',()=>renderWorkout()); grid.appendChild(row);
         }
         list.appendChild(card);
+        if(histOpen){ const canvas=card.querySelector('.hist-canvas'); drawLineChart(canvas, hist.map(h=>({label:'W'+h.week,value:h.top})), `Log a weight for ${ex.n} to see the trend.`); }
       });
       const fin=document.createElement('div'); fin.className='card'; fin.innerHTML=`<div class="kicker">Conditioning note</div><div class="muted">${d.finisher}</div>`; list.appendChild(fin);
     }
@@ -398,14 +420,15 @@
     function renderBodyweight(){ $('#bwDate').value = $('#bwDate').value || today; $('#bwUnit').textContent=state.unit.toUpperCase(); const sorted=[...state.bodyweights].sort((a,b)=>a.date.localeCompare(b.date)); $('#bwCount').textContent=String(sorted.length); const latest=sorted[sorted.length-1], first=sorted[0]; $('#bwLatest').textContent=latest?`${latest.weight} ${state.unit}`:'—'; $('#bwChange').textContent=(latest&&first&&sorted.length>1)?`${latest.weight-first.weight>0?'+':''}${(latest.weight-first.weight).toFixed(1)} ${state.unit}`:'—'; drawLineChart($('#bwChart'), sorted.map(x=>({label:x.date.slice(5),value:x.weight})), 'Add check-ins to see your trend.'); const list=$('#bwList'); list.innerHTML=''; if(!sorted.length){ list.innerHTML='<div class="list-item"><b>No weigh-ins yet</b><span>Add your first check-in to start the trend line.</span></div>'; return; } sorted.slice().reverse().slice(0,8).forEach(item=>{ const div=document.createElement('div'); div.className='list-item'; div.innerHTML=`<b>${item.date} · ${item.weight} ${state.unit}</b><span>${item.note||'No note'}</span>`; list.appendChild(div); }); }
     function addBodyweight(){ const date=$('#bwDate').value||today; const weight=Number($('#bwWeight').value); const note=$('#bwNote').value.trim(); if(!weight) return; state.bodyweights.push({date,weight,note}); state.bodyweights.sort((a,b)=>a.date.localeCompare(b.date)); $('#bwWeight').value=''; $('#bwNote').value=''; save(); renderBodyweight(); }
 
+    function renderLiftChart(){ const sel=$('#chartExerciseSelect'); if(!sel.options.length){ UNIQUE_MOVES.forEach(m=>{ const opt=document.createElement('option'); opt.value=m; opt.textContent=m; sel.appendChild(opt); }); } if(!UNIQUE_MOVES.includes(state.chartExercise)) state.chartExercise=UNIQUE_MOVES[0]; sel.value=state.chartExercise; const hist=historyForName(state.chartExercise); const current=hist.find(h=>h.week===state.activeWeek)||{top:0}; const best=hist.reduce((acc,cur)=>cur.top>acc.top?cur:acc,{week:'—',top:0}); const first=hist.find(h=>h.top>0), last=[...hist].reverse().find(h=>h.top>0); $('#chartCurrent').textContent=current.top?`${current.top} ${state.unit}`:'—'; $('#chartBest').textContent=best.top?`W${best.week} · ${best.top} ${state.unit}`:'—'; $('#chartTrend').textContent=(first&&last&&first.week!==last.week)?`${last.top-first.top>0?'+':''}${last.top-first.top} ${state.unit}`:'No trend yet'; drawLineChart($('#liftChart'), hist.map(h=>({label:`W${h.week}`,value:h.top})), 'Log some working weights to draw your line.'); }
     function renderCore(){ const usingOriginal=state.coreMode==='original'; $('#coreOriginalBtn').classList.toggle('active',usingOriginal); $('#coreScaledBtn').classList.toggle('active',!usingOriginal); $('#coreHeadline').textContent=usingOriginal ? 'Original Creed core: full 6-move routine from the first app.' : '57+ scaled core: lower-volume version for recovery and consistency.'; const list=$('#coreList'); list.innerHTML=''; getCoreRoutine().forEach(item=>{ const div=document.createElement('div'); div.className='list-item'; div.innerHTML=`<b>${item.n}</b><span>${item.m}</span>`; list.appendChild(div); }); const rem=$('#reminderList'); rem.innerHTML=''; REMINDERS.forEach(r=>{ const div=document.createElement('div'); div.className='list-item'; div.innerHTML=`<b>${r.t}</b><span>${r.d}</span>`; rem.appendChild(div); }); }
 
     function exportHistory(){ const payload={exported_at:new Date().toISOString(), app:'Creed 57+ Mobile', data:state}; const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`creed57-mobile-${today}.json`; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },0); }
     function importHistory(file){ const reader=new FileReader(); reader.onload=()=>{ try{ const parsed=JSON.parse(reader.result); const next=Object.assign({},defaultState,parsed.data||parsed); localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); Object.keys(state).forEach(k=>delete state[k]); Object.assign(state,next); renderAll(); alert('History imported successfully.'); }catch(e){ alert('Import failed. Please choose a valid export file.'); } }; reader.readAsText(file); }
 
-    function switchScreen(name){ state.screen=name; save(); $$('.screen').forEach(el=>el.classList.toggle('active',el.id===`screen-${name}`)); $$('.footer-tabs .tab').forEach(el=>el.classList.toggle('active',el.dataset.screen===name)); }
+    function switchScreen(name){ state.screen=name; save(); $$('.screen').forEach(el=>el.classList.toggle('active',el.id===`screen-${name}`)); $$('.footer-tabs .tab').forEach(el=>el.classList.toggle('active',el.dataset.screen===name)); if(name==='body') renderBodyweight(); if(name==='more') renderLiftChart(); }
     function renderSelectors(){ const weekSel=$('#weekSelect'); if(!weekSel.options.length){ for(let w=1;w<=8;w++){ const opt=document.createElement('option'); opt.value=w; opt.textContent=`Week ${w}`; weekSel.appendChild(opt); } } weekSel.value=String(state.activeWeek); $('#unitSelect').value=state.unit; $('#mealDate').value=$('#mealDate').value||today; $('#bwDate').value=$('#bwDate').value||today; }
-    function renderAll(){ renderSelectors(); renderWeeks(); renderWorkout(); renderMeals(); renderBodyweight(); renderCore(); switchScreen(state.screen||'workout'); }
+    function renderAll(){ renderSelectors(); renderWeeks(); renderWorkout(); renderMeals(); renderBodyweight(); renderCore(); renderLiftChart(); switchScreen(state.screen||'workout'); }
 
     $('#weekSelect').addEventListener('change',e=>{ state.activeWeek=Number(e.target.value); save(); renderAll(); });
     $('#unitSelect').addEventListener('change',e=>{ state.unit=e.target.value; save(); renderAll(); });
@@ -413,6 +436,7 @@
     $('#mealDate').addEventListener('change',renderMeals);
     $('#addMealBtn').addEventListener('click',addMeal);
     $('#addBwBtn').addEventListener('click',addBodyweight);
+    $('#chartExerciseSelect').addEventListener('change',e=>{ state.chartExercise=e.target.value; save(); renderLiftChart(); });
     $('#coreOriginalBtn').addEventListener('click',()=>{ state.coreMode='original'; save(); renderCore(); renderWorkout(); });
     $('#coreScaledBtn').addEventListener('click',()=>{ state.coreMode='scaled'; save(); renderCore(); renderWorkout(); });
     $('#exportBtn').addEventListener('click',exportHistory);
