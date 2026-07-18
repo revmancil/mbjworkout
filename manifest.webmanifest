@@ -1,7 +1,7 @@
 {
-  "name": "Creed 57+ Mobile App",
+  "name": "Creed 57+ Fighter Reset",
   "short_name": "Creed 57+",
-  "description": "Hosted mobile-first Creed workout app with bigger text, bottom navigation, and recovery-friendly tracking.",
+  "description": "A sustainable Creed-inspired boxing and strength program with muscle-building day 5, nutrition tracking, bodyweight check-ins, and workout history export/import.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
