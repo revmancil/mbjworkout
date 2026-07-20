@@ -1,7 +1,7 @@
 {
-  "name": "Creed 57+ Fighter Reset",
-  "short_name": "Creed 57+",
-  "description": "A sustainable Creed-inspired boxing and strength program with muscle-building day 5, nutrition tracking, bodyweight check-ins, and workout history export/import.",
+  "name": "Creed Hybrid — Strength + Functional Training",
+  "short_name": "Creed Hybrid",
+  "description": "Creed's premium hybrid training system: four strength-first lifting days plus coach-led functional class sessions on Wednesday and Saturday, built around an 8-week progressive block.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
